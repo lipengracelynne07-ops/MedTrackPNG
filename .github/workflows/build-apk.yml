@@ -2,7 +2,7 @@ name: Build MedTrack PNG APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -10,25 +10,114 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
+
+      - name: Prepare Android project
+        shell: bash
+        run: |
+          set -e
+
+          echo "Creating Android project structure..."
+
+          mkdir -p app/src/main/java
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/assets
+
+          # Copy existing Android files into the proper module
+          cp AndroidManifest.xml app/src/main/AndroidManifest.xml
+          cp MainActivity.java app/src/main/java/MainActivity.java
+          cp strings.xml app/src/main/res/values/strings.xml
+          cp styles.xml app/src/main/res/values/styles.xml
+          cp index.html app/src/main/assets/index.html
+
+          # Copy ProGuard configuration if present
+          if [ -f proguard-rules.pro ]; then
+            cp proguard-rules.pro app/proguard-rules.pro
+          else
+            touch app/proguard-rules.pro
+          fi
+
+          # Create Android application module
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.medtrackpng.kimadan'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.medtrackpng.kimadan'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 200
+                  versionName "2.0.0"
+              }
+
+              buildTypes {
+                  debug {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+          }
+          EOF
+
+          # Create root Gradle configuration
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          # Create settings
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "MedTrackPNG-Kimadan"
+          include ':app'
+          EOF
+
+          echo "Android project prepared successfully."
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: "8.9"
 
-      - name: Build APK
-        run: gradle assembleDebug --no-daemon
+      - name: Build Debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MedTrackPNG-Kimadan-v2.0.0-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
